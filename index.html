@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,6 +6,7 @@
 <title>IBM Quantum Jobs Dashboard (Local)</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
 <style>
   @keyframes pulse-quantum {0%,100%{opacity:1}50%{opacity:0.5}}
   .quantum-pulse{animation:pulse-quantum 2s infinite;}
@@ -19,6 +18,11 @@
     border: 1px solid rgba(34, 197, 94, 0.5);
     border-radius: 4px;
   }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .slide-in { animation: slideIn 0.3s ease-out; }
 </style>
 </head>
 <body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 min-h-screen text-white">
@@ -27,9 +31,9 @@
   <!-- Header -->
   <div class="text-center mb-8">
     <h1 class="text-4xl font-bold mb-2 bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-      Quantum Jobs Dashboard (Local Simulator)
+      IBM Quantum Jobs Dashboard
     </h1>
-    <p class="text-gray-300 text-lg">Simulated quantum jobs (no paid account required)</p>
+    <p class="text-gray-300 text-lg">Real-time quantum computing job monitoring & analytics</p>
     <div class="mt-4 flex justify-center items-center space-x-4">
       <div class="flex items-center space-x-2">
         <div class="w-3 h-3 bg-green-400 rounded-full quantum-pulse"></div>
@@ -39,41 +43,61 @@
     </div>
   </div>
 
-  <!-- Stats + New Job form -->
-  <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-    <div class="md:col-span-3 bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-      <div class="flex items-center justify-between">
-        <div>
+  <!-- Stats Dashboard -->
+  <div class="grid grid-cols-1 md:grid-cols-6 gap-6 mb-8">
+    <div class="md:col-span-4 bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="text-center">
           <p class="text-gray-300 text-sm">Total Jobs</p>
           <p class="text-2xl font-bold text-white" id="totalJobs">0</p>
         </div>
-        <div>
+        <div class="text-center">
           <p class="text-gray-300 text-sm">Running</p>
           <p class="text-2xl font-bold text-green-400" id="runningJobs">0</p>
         </div>
-        <div>
+        <div class="text-center">
           <p class="text-gray-300 text-sm">Queued</p>
           <p class="text-2xl font-bold text-yellow-400" id="queuedJobs">0</p>
         </div>
-        <div>
-          <p class="text-gray-300 text-sm">Completed</p>
-          <p class="text-2xl font-bold text-purple-400" id="completedJobs">0</p>
+        <div class="text-center">
+          <p class="text-gray-300 text-sm">Success Rate</p>
+          <p class="text-2xl font-bold text-purple-400" id="successRate">--</p>
         </div>
       </div>
     </div>
 
-    <!-- New Job inline form -->
+    <!-- New Job Form -->
     <div class="md:col-span-2 bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-      <h3 class="text-white font-semibold mb-3">Create New Job</h3>
-      <div class="flex flex-wrap gap-2 items-center">
-        <select id="newBackend" class="bg-white/10 text-white rounded px-2 py-1">
-          <option>Loading...</option>
+      <h3 class="text-white font-semibold mb-3">Create Quantum Job</h3>
+      <div class="space-y-2">
+        <select id="newJobType" class="w-full bg-white/10 text-white rounded px-2 py-1 text-sm">
+          <option>Loading job types...</option>
         </select>
-        <input id="newQubits" class="bg-white/10 text-white rounded px-2 py-1 w-20" type="number" min="1" value="2" />
-        <input id="newShots" class="bg-white/10 text-white rounded px-2 py-1 w-28" type="number" min="1" value="1024" />
-        <button id="createJobBtn" class="px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded">Create</button>
+        <select id="newBackend" class="w-full bg-white/10 text-white rounded px-2 py-1 text-sm">
+          <option>Loading backends...</option>
+        </select>
+        <div class="flex gap-2">
+          <input id="newQubits" class="bg-white/10 text-white rounded px-2 py-1 w-16 text-sm" type="number" min="1" max="20" value="3" placeholder="Qubits" />
+          <input id="newShots" class="bg-white/10 text-white rounded px-2 py-1 flex-1 text-sm" type="number" min="1" value="1024" placeholder="Shots" />
+        </div>
+        <button id="createJobBtn" class="w-full px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded text-sm font-medium">Create Job</button>
       </div>
-      <p class="text-xs text-gray-300 mt-3">Pick backend, qubits, shots then click <strong>Create</strong>.</p>
+    </div>
+  </div>
+
+  <!-- Analytics Charts -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+      <h3 class="text-white font-semibold mb-4">Backend Utilization</h3>
+      <div id="backendChart" class="h-48"></div>
+    </div>
+    <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+      <h3 class="text-white font-semibold mb-4">Job Types</h3>
+      <div id="jobTypeChart" class="h-48"></div>
+    </div>
+    <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+      <h3 class="text-white font-semibold mb-4">Status Distribution</h3>
+      <div id="statusChart" class="h-48"></div>
     </div>
   </div>
 
@@ -107,22 +131,23 @@
   <!-- Jobs Table -->
   <div class="bg-white/10 backdrop-blur-lg rounded-xl border border-white/20 overflow-hidden">
     <div class="p-6 border-b border-white/20">
-      <h2 class="text-xl font-semibold text-white">Active Quantum Jobs</h2>
+      <h2 class="text-xl font-semibold text-white">Quantum Computing Jobs</h2>
       <div id="searchResults" class="mt-2 text-sm text-gray-300" style="display: none;"></div>
     </div>
     <div class="overflow-x-auto">
       <table class="w-full">
         <thead class="bg-white/5">
           <tr>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Job ID</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Status</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Backend</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Qubits</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Shots</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Queue Position</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Created</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Duration</th>
-            <th class="px-6 py-4 text-left text-sm text-gray-300">Actions</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Job ID</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Status</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Job Type</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Backend</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Qubits</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Shots</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Queue</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Created</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Duration</th>
+            <th class="px-4 py-3 text-left text-xs text-gray-300">Actions</th>
           </tr>
         </thead>
         <tbody id="jobsTableBody" class="divide-y divide-white/10"></tbody>
@@ -132,222 +157,608 @@
 </div>
 
 <script>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Quantum Jobs Dashboard</title>
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-</head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col">
+const apiBase = "http://127.0.0.1:5000";
 
-  <!-- HEADER -->
-  <header class="bg-gray-800 p-4 shadow-lg flex justify-between items-center">
-    <h1 class="text-2xl font-bold text-blue-400">Quantum Jobs Dashboard</h1>
-    <nav>
-      <button id="createJobBtn" class="bg-blue-500 px-4 py-2 rounded hover:bg-blue-600">+ New Job</button>
-    </nav>
-  </header>
+// ---------- WebSocket Connection ----------
+const socket = io(apiBase);
 
-  <!-- MAIN -->
-  <main class="flex-1 p-6">
-    <section class="mb-6">
-      <h2 class="text-xl font-semibold mb-4">Available Backends</h2>
-      <div id="backendList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-    </section>
+socket.on('connect', () => {
+  console.log('Connected to quantum job server');
+  document.querySelector('.quantum-pulse').style.backgroundColor = '#10B981'; // Green when connected
+});
 
-    <section>
-      <h2 class="text-xl font-semibold mb-4">Job Queue</h2>
-      <div id="jobsTable" class="overflow-x-auto">
-        <table class="min-w-full border border-gray-700 text-sm">
-          <thead class="bg-gray-700">
-            <tr>
-              <th class="px-3 py-2 border border-gray-600">Job ID</th>
-              <th class="px-3 py-2 border border-gray-600">Backend</th>
-              <th class="px-3 py-2 border border-gray-600">Status</th>
-              <th class="px-3 py-2 border border-gray-600">Submitted</th>
-              <th class="px-3 py-2 border border-gray-600">Duration</th>
-              <th class="px-3 py-2 border border-gray-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="jobsBody" class="divide-y divide-gray-700"></tbody>
-        </table>
+socket.on('disconnect', () => {
+  console.log('Disconnected from server');
+  document.querySelector('.quantum-pulse').style.backgroundColor = '#EF4444'; // Red when disconnected
+});
+
+socket.on('job_update', (data) => {
+  console.log('Real-time job update:', data);
+  updateJobInTable(data);
+  updateStats();
+});
+
+socket.on('job_created', (data) => {
+  console.log('New job created:', data);
+  addJobToTable(data);
+  updateStats();
+  updateAnalyticsCharts();
+});
+
+socket.on('job_completed', (data) => {
+  console.log('Job completed:', data);
+  updateJobInTable(data);
+  showJobCompletionNotification(data);
+  updateStats();
+  updateAnalyticsCharts();
+});
+
+// ---------- API helpers ----------
+async function fetchJobs(){ return (await fetch(`${apiBase}/jobs`)).json(); }
+async function fetchBackends(){ return (await fetch(`${apiBase}/backends`)).json(); }
+async function fetchBackendInfo(){ return (await fetch(`${apiBase}/backends/info`)).json(); }
+async function fetchJobTypes(){ return (await fetch(`${apiBase}/job-types`)).json(); }
+async function fetchAnalytics(){ return (await fetch(`${apiBase}/analytics`)).json(); }
+async function fetchJob(id){ return (await fetch(`${apiBase}/jobs/${id}`)).json(); }
+
+function formatTimeAgo(dateStr){
+  if(!dateStr) return '--';
+  const date = new Date(dateStr);
+  const diff = Date.now() - date;
+  const mins = Math.floor(diff/60000);
+  const hrs = Math.floor(mins/60);
+  const days = Math.floor(hrs/24);
+  if(days>0) return `${days}d ago`;
+  if(hrs>0) return `${hrs}h ago`;
+  if(mins>0) return `${mins}m ago`;
+  return 'Just now';
+}
+
+function formatDuration(duration){
+  if(duration === null || duration === undefined) return '--';
+  const secs = typeof duration === 'number' ? duration : parseFloat(duration) || 0;
+  if(secs < 1) return `${Math.round(secs*1000)}ms`;
+  const m = Math.floor(secs/60);
+  const s = (secs % 60).toFixed(2);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+async function updateStats(jobs = null){
+  if (!jobs) {
+    jobs = await fetchJobs();
+  }
+  document.getElementById('totalJobs').textContent = jobs.length;
+  document.getElementById('runningJobs').textContent = jobs.filter(j=>j.Status==='Running').length;
+  document.getElementById('queuedJobs').textContent = jobs.filter(j=>j.Status==='Queued').length;
+  
+  const completed = jobs.filter(j=>j.Status==='Completed').length;
+  const failed = jobs.filter(j=>j.Status==='Error').length;
+  const total = completed + failed;
+  const successRate = total > 0 ? Math.round((completed/total)*100) : 0;
+  document.getElementById('successRate').textContent = `${successRate}%`;
+}
+
+// Real-time update functions for WebSocket
+function updateJobInTable(jobData) {
+  const row = document.getElementById(`row_${jobData['Job ID']}`);
+  if (!row) return;
+
+  // Update status badge
+  const statusEl = row.querySelector('.status-badge');
+  if (statusEl) {
+    statusEl.textContent = jobData.Status;
+    const statusColors = {
+      'Running': 'border-green-400 text-green-400 bg-green-500/20',
+      'Queued': 'border-yellow-400 text-yellow-400 bg-yellow-500/20',
+      'Completed': 'border-purple-400 text-purple-400 bg-purple-500/20',
+      'Error': 'border-red-400 text-red-400 bg-red-500/20',
+      'Cancelled': 'border-gray-400 text-gray-400 bg-gray-500/20'
+    };
+    statusEl.className = `status-badge px-2 py-1 rounded-full text-xs font-medium border ${statusColors[jobData.Status]}`;
+  }
+
+  // Update queue position
+  const queueEl = row.querySelector('.queue');
+  if (queueEl) {
+    queueEl.textContent = jobData['Queue Position'] !== null ? `#${jobData['Queue Position']}` : '--';
+  }
+
+  // Update duration
+  const durationEl = row.querySelector('.duration');
+  if (durationEl) {
+    durationEl.textContent = formatDuration(jobData.Duration);
+  }
+}
+
+function addJobToTable(jobData) {
+  // Check if job already exists
+  if (document.getElementById(`row_${jobData['Job ID']}`)) return;
+  
+  // Add to table (simplified version - full implementation would match renderJobs)
+  renderJobs(); // For now, just re-render the whole table
+}
+
+function showJobCompletionNotification(jobData) {
+  // Create notification
+  const notification = document.createElement('div');
+  notification.className = 'fixed top-4 right-4 bg-green-500/90 text-white px-6 py-3 rounded-lg shadow-lg z-50 slide-in';
+  notification.innerHTML = `
+    <div class="flex items-center space-x-2">
+      <span class="text-lg">✅</span>
+      <div>
+        <p class="font-semibold">Job ${jobData['Job ID']} Completed!</p>
+        <p class="text-sm opacity-90">${jobData['Job Type']} on ${jobData.Backend}</p>
       </div>
-    </section>
-  </main>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    setTimeout(() => notification.remove(), 300);
+  }, 5000);
+}
 
-  <!-- FOOTER -->
-  <footer class="bg-gray-800 p-4 text-center text-gray-400 text-sm">
-    Quantum Dashboard &copy; 2025
-  </footer>
+// ---------- Analytics Charts ----------
+async function updateAnalyticsCharts() {
+  try {
+    const analytics = await fetchAnalytics();
+    
+    // Backend utilization chart
+    const backendData = [{
+      x: Object.keys(analytics.backend_utilization),
+      y: Object.values(analytics.backend_utilization),
+      type: 'bar',
+      marker: { color: 'rgba(139, 92, 246, 0.7)' }
+    }];
+    Plotly.newPlot('backendChart', backendData, {
+      margin: {t: 20, l: 40, r: 20, b: 40},
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent',
+      font: { color: 'white', size: 10 },
+      xaxis: { color: 'white' },
+      yaxis: { color: 'white' }
+    }, { responsive: true, displayModeBar: false });
 
-  <script>
-    const apiBase = "https://quantum-hackathon-2.onrender.com";
+    // Job types pie chart
+    const jobTypeData = [{
+      labels: Object.keys(analytics.job_type_distribution),
+      values: Object.values(analytics.job_type_distribution),
+      type: 'pie',
+      marker: { colors: ['#8B5CF6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#6366F1'] }
+    }];
+    Plotly.newPlot('jobTypeChart', jobTypeData, {
+      margin: {t: 20, l: 20, r: 20, b: 20},
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent',
+      font: { color: 'white', size: 10 },
+      showlegend: false
+    }, { responsive: true, displayModeBar: false });
 
-    // ---------- helpers ----------
-    async function fetchJobs(){ return (await fetch(`${apiBase}/jobs`)).json(); }
-    async function fetchBackends(){ return (await fetch(`${apiBase}/backends`)).json(); }
-    async function fetchJob(id){ return (await fetch(`${apiBase}/jobs/${id}`)).json(); }
+    // Status distribution
+    const statusData = [{
+      x: Object.keys(analytics.status_distribution),
+      y: Object.values(analytics.status_distribution),
+      type: 'bar',
+      marker: { color: ['#10B981', '#F59E0B', '#8B5CF6', '#EF4444'] }
+    }];
+    Plotly.newPlot('statusChart', statusData, {
+      margin: {t: 20, l: 40, r: 20, b: 40},
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent',
+      font: { color: 'white', size: 10 },
+      xaxis: { color: 'white' },
+      yaxis: { color: 'white' }
+    }, { responsive: true, displayModeBar: false });
 
-    function formatTimeAgo(dateStr){
-      if(!dateStr) return '--';
-      const date = new Date(dateStr);
-      const diff = Date.now() - date;
-      const mins = Math.floor(diff/60000);
-      const hrs = Math.floor(mins/60);
-      const days = Math.floor(hrs/24);
-      if(days>0) return `${days}d ago`;
-      if(hrs>0) return `${hrs}h ago`;
-      if(mins>0) return `${mins}m ago`;
-      return 'Just now';
+  } catch (err) {
+    console.error('Failed to update analytics:', err);
+  }
+}
+
+// ---------- Create job ----------
+document.getElementById('createJobBtn').addEventListener('click', async ()=>{
+  const jobType = document.getElementById('newJobType').value;
+  const backend = document.getElementById('newBackend').value;
+  const qubits = parseInt(document.getElementById('newQubits').value) || 3;
+  const shots = parseInt(document.getElementById('newShots').value) || 1024;
+  
+  const res = await fetch(`${apiBase}/jobs/new`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({job_type: jobType, backend, qubits, shots})
+  });
+  
+  if(res.status === 201){
+    renderJobs();
+    updateAnalyticsCharts();
+  } else {
+    const err = await res.json();
+    alert("Error creating job: " + (err.error || JSON.stringify(err)));
+  }
+});
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  renderJobs();
+  updateAnalyticsCharts();
+});
+
+// ---------- Run job ----------
+async function runJob(jobId, btnEl){
+  try {
+    if(btnEl) { 
+      btnEl.disabled = true; 
+      btnEl.innerHTML = '<div class="spin-slow inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></div> Running...';
+    }
+    
+    const res = await fetch(`${apiBase}/jobs/run/${jobId}`, { method: "POST" });
+    const data = await res.json();
+    
+    if(res.status !== 200){
+      alert("Run error: " + (data.error || JSON.stringify(data)));
+      if(btnEl) { btnEl.disabled = false; btnEl.textContent = 'Run Job'; }
+      renderJobs();
+      return;
     }
 
-    function formatDuration(duration){
-      if(duration === null || duration === undefined) return '--';
-      const secs = typeof duration === 'number' ? duration : parseFloat(duration) || 0;
-      if(secs < 1) return `${Math.round(secs*1000)}ms`;
-      const m = Math.floor(secs/60);
-      const s = (secs % 60).toFixed(2);
-      return m > 0 ? `${m}m ${s}s` : `${s}s`;
-    }
+    // Update UI with results
+    const histogramId = `hist_${jobId}`;
+    const tableId = `table_${jobId}`;
+    const circuitId = `circuit_${jobId}`;
+    
+    setTimeout(() => {
+      const histogramDiv = document.getElementById(histogramId);
+      const tableEl = document.getElementById(tableId);
+      const circuitDiv = document.getElementById(circuitId);
+      
+      if(histogramDiv && data.counts){
+        Plotly.newPlot(histogramId, [{
+          x: Object.keys(data.counts), 
+          y: Object.values(data.counts), 
+          type: 'bar',
+          marker: { color: 'rgba(139, 92, 246, 0.7)' }
+        }], {
+          margin: { t: 20, l: 40, r: 20, b: 40 },
+          paper_bgcolor: 'transparent',
+          plot_bgcolor: 'transparent',
+          font: { color: 'white' },
+          xaxis: { title: "Quantum State", color: 'white' },
+          yaxis: { title: "Measurement Counts", color: 'white' }
+        }, { responsive: true, displayModeBar: false });
+      }
+      
+      if(tableEl && data.counts){
+        const tbody = tableEl.querySelector('tbody');
+        tbody.innerHTML = '';
+        const maxCount = Math.max(...Object.values(data.counts));
+        for(const [state, count] of Object.entries(data.counts)){
+          const row = document.createElement('tr');
+          const probability = ((count / Object.values(data.counts).reduce((a,b) => a+b, 0)) * 100).toFixed(2);
+          row.innerHTML = `
+            <td class="px-3 py-2 border border-white/20 font-mono">${state}</td>
+            <td class="px-3 py-2 border border-white/20 text-center">${count}</td>
+            <td class="px-3 py-2 border border-white/20 text-center">${probability}%</td>
+          `;
+          const intensity = Math.floor((count/maxCount)*100);
+          row.style.background = `linear-gradient(90deg, rgba(139, 92, 246, ${intensity/100}) 0%, transparent 100%)`;
+          tbody.appendChild(row);
+        }
+      }
+    }, 100);
 
-    // ---------- create job ----------
-    document.getElementById('createJobBtn').addEventListener('click', async ()=>{
-      const backend = prompt("Enter backend name:");
-      const qubits = parseInt(prompt("Enter qubit count:")) || 2;
-      const shots = parseInt(prompt("Enter shots:")) || 1024;
-      const res = await fetch(`${apiBase}/jobs/new`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({backend, qubits, shots})
-      });
-      if(res.status === 201){
-        renderJobs();
-      } else {
-        const err = await res.json();
-        alert("Error creating job: " + (err.error || JSON.stringify(err)));
+  } catch(err){
+    alert("Request failed: " + err);
+  } finally {
+    if(btnEl){ 
+      btnEl.disabled = false; 
+      btnEl.textContent = 'View Details'; 
+    }
+    setTimeout(() => {
+      renderJobs();
+      updateAnalyticsCharts();
+    }, 1000);
+  }
+}
+
+// ---------- Toggle job details ----------
+async function toggleDetails(jobId) {
+  const detailsRow = document.getElementById(`details_${jobId}`);
+  if (detailsRow.style.display === 'table-row') {
+    detailsRow.style.display = 'none';
+    return;
+  }
+  detailsRow.style.display = 'table-row';
+  detailsRow.classList.add('slide-in');
+
+  const job = await fetchJob(jobId);
+
+  if (job.Status === 'Cancelled') {
+    detailsRow.innerHTML = `
+      <td colspan="10" class="p-6 text-center text-gray-300">
+        <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+          <p class="text-red-400 font-semibold">Job Cancelled</p>
+          <p class="text-sm mt-2">This quantum job was cancelled and will not execute.</p>
+        </div>
+      </td>`;
+    return;
+  }
+
+  if (job.Status === 'Error') {
+    detailsRow.innerHTML = `
+      <td colspan="10" class="p-6 text-center text-gray-300">
+        <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+          <p class="text-red-400 font-semibold">Job Failed</p>
+          <p class="text-sm mt-2 text-red-300">${job.Error}</p>
+        </div>
+      </td>`;
+    return;
+  }
+
+  if (job.Status === 'Completed') {
+    detailsRow.innerHTML = `
+      <td colspan="10" class="p-6">
+        <div class="bg-white/5 rounded-lg p-4">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2">
+              <h4 class="text-white font-semibold mb-3">Quantum Measurement Results</h4>
+              <div id="hist_${jobId}" class="h-64 bg-white/5 rounded-lg"></div>
+            </div>
+            <div>
+              <h4 class="text-white font-semibold mb-3">Measurement Data</h4>
+              <div class="bg-white/5 rounded-lg overflow-hidden">
+                <table id="table_${jobId}" class="w-full text-sm">
+                  <thead class="bg-white/10">
+                    <tr>
+                      <th class="px-3 py-2 text-left text-gray-300">State</th>
+                      <th class="px-3 py-2 text-center text-gray-300">Count</th>
+                      <th class="px-3 py-2 text-center text-gray-300">Probability</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          ${job["Circuit Diagram"] ? `
+            <div class="mt-6">
+              <h4 class="text-white font-semibold mb-3">Quantum Circuit Diagram</h4>
+              <div class="bg-white rounded-lg p-4">
+                <img src="data:image/png;base64,${job["Circuit Diagram"]}" class="w-full max-w-4xl mx-auto" alt="Quantum Circuit" />
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      </td>`;
+    
+    setTimeout(() => renderJobResult(jobId, job.Result), 100);
+    return;
+  }
+
+  // Queued or Running jobs
+  detailsRow.innerHTML = `
+    <td colspan="10" class="p-6 text-center">
+      <div class="bg-white/5 rounded-lg p-6">
+        <p id="jobMessage_${jobId}" class="text-gray-300 mb-4">
+          ${job.Status === 'Queued' ? 
+            `⏳ Waiting in queue (Position: ${job['Queue Position'] ?? 'Unknown'})` : 
+            '🔄 Quantum circuit executing...'}
+        </p>
+        <div class="space-y-2 text-sm text-gray-400 mb-4">
+          <p><strong>Job Type:</strong> ${job['Job Type']}</p>
+          <p><strong>Circuit Depth:</strong> ${job['Circuit Depth']} gates</p>
+          <p><strong>Estimated Queue Time:</strong> ${job['Estimated Queue Time']}</p>
+        </div>
+        <div class="space-x-3">
+          <button id="runbtn_${jobId}" class="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all">
+            ${job.Status === 'Queued' ? '▶️ Execute Job' : '👁️ View Progress'}
+          </button>
+          <button id="cancelbtn_${jobId}" class="px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 rounded-lg hover:from-red-600 hover:to-pink-600 transition-all">
+            ❌ Cancel Job
+          </button>
+        </div>
+      </div>
+    </td>`;
+
+  // Add event listeners
+  const runBtn = document.getElementById(`runbtn_${jobId}`);
+  const cancelBtn = document.getElementById(`cancelbtn_${jobId}`);
+
+  if (runBtn) {
+    runBtn.addEventListener('click', async (e) => {
+      await runJob(jobId, e.target);
+    });
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await fetch(`${apiBase}/jobs/cancel/${jobId}`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Cancel failed');
+        
+        document.getElementById(`jobMessage_${jobId}`).innerHTML = '❌ <strong>Job Cancelled</strong>';
+        runBtn.style.display = 'none';
+        cancelBtn.style.display = 'none';
+        
+        setTimeout(() => renderJobs(), 1000);
+      } catch (err) {
+        alert("Cancel failed: " + err.message);
+        e.target.disabled = false;
       }
     });
+  }
+}
 
-    // ---------- run job ----------
-    async function runJob(jobId, btnEl){
-      try {
-        if(btnEl) { btnEl.disabled = true; btnEl.textContent = 'Running...'; }
-        const res = await fetch(`${apiBase}/jobs/run/${jobId}`, { method: "POST" });
-        const data = await res.json();
-        if(res.status !== 200){
-          alert("Run error: " + (data.error || JSON.stringify(data)));
-          if(btnEl) { btnEl.disabled = false; btnEl.textContent = 'Run'; }
-          renderJobs();
-          return;
-        }
-        const histogramId = `hist_${jobId}`;
-        const tableId = `table_${jobId}`;
-        const histogramDiv = document.getElementById(histogramId);
-        const tableEl = document.getElementById(tableId);
-        if(histogramDiv && data.result){
-          const keys = Object.keys(data.result);
-          const vals = Object.values(data.result);
-          Plotly.newPlot(histogramDiv, [{x:keys,y:vals,type:'bar'}], {title:'Measurement Results'});
-        }
-        if(tableEl && data.result){
-          tableEl.innerHTML = "";
-          Object.entries(data.result).forEach(([k,v])=>{
-            const row = document.createElement('tr');
-            const intensity = Math.min(255, Math.round(v*10));
-            row.innerHTML = `<td class="px-2 py-1 border border-white/20">${k}</td>
-                             <td class="px-2 py-1 border border-white/20">${v}</td>`;
-            row.children[1].style.backgroundColor = `rgb(${255-intensity},${255-intensity},255)`;
-            tableEl.appendChild(row);
-          });
-        }
-        renderJobs();
-      } catch(err){
-        console.error(err);
-        alert("Run failed: "+err);
-      }
+function renderJobResult(jobId, data) {
+  if (!data || !data.counts) return;
+  
+  const histogramId = `hist_${jobId}`;
+  const tableEl = document.getElementById(`table_${jobId}`);
+
+  // Render histogram
+  Plotly.newPlot(histogramId, [{
+    x: Object.keys(data.counts),
+    y: Object.values(data.counts),
+    type: 'bar',
+    marker: { color: 'rgba(139, 92, 246, 0.7)' }
+  }], {
+    margin: { t: 20, l: 40, r: 20, b: 40 },
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: 'white' },
+    xaxis: { title: "Quantum State", color: 'white' },
+    yaxis: { title: "Counts", color: 'white' }
+  }, { responsive: true, displayModeBar: false });
+
+  // Fill results table
+  if (tableEl) {
+    const tbody = tableEl.querySelector('tbody');
+    tbody.innerHTML = '';
+    const totalShots = Object.values(data.counts).reduce((a, b) => a + b, 0);
+    const maxCount = Math.max(...Object.values(data.counts));
+    
+    for (const [state, count] of Object.entries(data.counts)) {
+      const row = document.createElement('tr');
+      const probability = ((count / totalShots) * 100).toFixed(2);
+      row.innerHTML = `
+        <td class="px-3 py-2 border border-white/20 font-mono text-cyan-300">${state}</td>
+        <td class="px-3 py-2 border border-white/20 text-center">${count}</td>
+        <td class="px-3 py-2 border border-white/20 text-center text-purple-300">${probability}%</td>
+      `;
+      const intensity = count / maxCount;
+      row.style.background = `linear-gradient(90deg, rgba(139, 92, 246, ${intensity * 0.3}) 0%, transparent 100%)`;
+      tbody.appendChild(row);
+    }
+  }
+}
+
+// ---------- Render jobs list ----------
+async function renderJobs() {
+  const tbody = document.getElementById('jobsTableBody');
+  tbody.innerHTML = '';
+  
+  try {
+    const [jobs, backends, jobTypes] = await Promise.all([
+      fetchJobs(),
+      fetchBackends(), 
+      fetchJobTypes()
+    ]);
+
+    // Populate dropdowns
+    const backendFilter = document.getElementById('backendFilter');
+    const backendSelect = document.getElementById('newBackend');
+    const jobTypeSelect = document.getElementById('newJobType');
+    
+    backendFilter.innerHTML = `<option value="all">All Backends</option>${backends.map(b=>`<option value="${b}">${b}</option>`).join('')}`;
+    backendSelect.innerHTML = backends.map(b=>`<option value="${b}">${b}</option>`).join('');
+    jobTypeSelect.innerHTML = jobTypes.map(jt=>`<option value="${jt}">${jt}</option>`).join('');
+
+    updateStats(jobs);
+
+    // Apply filters
+    const statusFilterVal = document.getElementById('statusFilter').value;
+    const backendFilterVal = document.getElementById('backendFilter').value;
+    const searchFilterVal = document.getElementById('searchFilter').value.trim().toLowerCase();
+
+    let filteredJobs = jobs.filter(job => {
+      if (statusFilterVal !== 'all' && job.Status.toLowerCase() !== statusFilterVal) return false;
+      if (backendFilterVal !== 'all' && job.Backend !== backendFilterVal) return false;
+      if (searchFilterVal && !String(job['Job ID']).toLowerCase().includes(searchFilterVal)) return false;
+      return true;
+    });
+
+    // Update search results
+    const searchResults = document.getElementById('searchResults');
+    if (searchFilterVal) {
+      searchResults.style.display = 'block';
+      searchResults.textContent = `Found ${filteredJobs.length} job(s) matching "${searchFilterVal}"`;
+    } else {
+      searchResults.style.display = 'none';
     }
 
-    // ---------- render ----------
-    async function renderBackends(){
-      const backends = await fetchBackends();
-      const div = document.getElementById('backendList');
-      div.innerHTML = "";
-      backends.forEach(b=>{
-        const card = document.createElement('div');
-        card.className = "bg-gray-700 p-4 rounded shadow";
-        card.innerHTML = `<h3 class="font-semibold text-blue-300">${b.name}</h3>
-                          <p>Status: ${b.status}</p>
-                          <p>Qubits: ${b.qubits}</p>`;
-        div.appendChild(card);
-      });
-    }
+    // Render jobs
+    filteredJobs.forEach(job => {
+      const row = document.createElement('tr');
+      row.id = `row_${job['Job ID']}`;
+      row.className = 'hover:bg-white/5 transition-colors duration-200';
+      
+      const jobIdStr = String(job['Job ID']);
+      const jobIdDisplay = searchFilterVal && jobIdStr.toLowerCase().includes(searchFilterVal) 
+        ? jobIdStr.replace(new RegExp(`(${searchFilterVal})`, 'gi'), '<span class="bg-green-400/30 px-1 rounded">$1</span>')
+        : jobIdStr;
+      
+      const statusColors = {
+        'Running': 'border-green-400 text-green-400 bg-green-500/20',
+        'Queued': 'border-yellow-400 text-yellow-400 bg-yellow-500/20',
+        'Completed': 'border-purple-400 text-purple-400 bg-purple-500/20',
+        'Error': 'border-red-400 text-red-400 bg-red-500/20',
+        'Cancelled': 'border-gray-400 text-gray-400 bg-gray-500/20'
+      };
+      
+      row.innerHTML = `
+        <td class="px-4 py-3 font-mono text-sm text-cyan-400">${jobIdDisplay}</td>
+        <td class="px-4 py-3">
+          <span class="status-badge px-2 py-1 rounded-full text-xs font-medium border ${statusColors[job.Status] || 'border-gray-400 text-gray-400 bg-gray-500/20'}">
+            ${job.Status}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-sm text-gray-300">${job['Job Type']}</td>
+        <td class="px-4 py-3 text-sm text-gray-300">${job.Backend}</td>
+        <td class="px-4 py-3 text-sm text-gray-300">${job.Qubits}</td>
+        <td class="px-4 py-3 text-sm text-gray-300">${job.Shots.toLocaleString()}</td>
+        <td class="queue px-4 py-3 text-sm text-gray-300">${job['Queue Position'] !== null ? `#${job['Queue Position']}` : '--'}</td>
+        <td class="px-4 py-3 text-sm text-gray-300">${formatTimeAgo(job.Created)}</td>
+        <td class="duration px-4 py-3 text-sm text-gray-300">${formatDuration(job.Duration)}</td>
+        <td class="px-4 py-3">
+          <button id="view_${job['Job ID']}" class="px-3 py-1 text-xs bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all">
+            View Details
+          </button>
+        </td>`;
+      tbody.appendChild(row);
 
-    async function renderJobs(){
-      const jobs = await fetchJobs();
-      const body = document.getElementById('jobsBody');
-      body.innerHTML = "";
-      jobs.forEach(job=>{
-        const tr = document.createElement('tr');
-        tr.id = `row_${job['Job ID']}`;
-        tr.className = "hover:bg-gray-800";
-        tr.innerHTML = `
-          <td class="px-3 py-2 border border-gray-700">${job['Job ID']}</td>
-          <td class="px-3 py-2 border border-gray-700">${job['Backend']}</td>
-          <td class="px-3 py-2 border border-gray-700">${job['Status']}</td>
-          <td class="px-3 py-2 border border-gray-700">${formatTimeAgo(job['Submission Time'])}</td>
-          <td class="px-3 py-2 border border-gray-700">${formatDuration(job['Execution Duration (s)'])}</td>
-          <td class="px-3 py-2 border border-gray-700">
-            <button id="run_${job['Job ID']}" class="bg-green-500 px-2 py-1 rounded text-sm">Run</button>
-            <button id="view_${job['Job ID']}" class="bg-gray-500 px-2 py-1 rounded text-sm">View</button>
-          </td>`;
-        body.appendChild(tr);
+      // Details row
+      const detailsRow = document.createElement('tr');
+      detailsRow.id = `details_${job['Job ID']}`;
+      detailsRow.className = 'details-row';
+      detailsRow.style.display = 'none';
+      tbody.appendChild(detailsRow);
 
-        document.getElementById(`run_${job['Job ID']}`).onclick = (e)=> runJob(job['Job ID'], e.target);
-        document.getElementById(`view_${job['Job ID']}`).onclick = async ()=>{
-          const detailsRow = document.getElementById(`details_${job['Job ID']}`);
-          if(detailsRow){
-            detailsRow.remove();
-          } else {
-            const dtr = document.createElement('tr');
-            dtr.id = `details_${job['Job ID']}`;
-            dtr.innerHTML = `<td colspan="6" class="bg-gray-800 p-4">
-              <div id="hist_${job['Job ID']}" class="h-64"></div>
-              <table class="mt-2 text-sm border border-white/20">
-                <thead><tr><th>Bitstring</th><th>Counts</th></tr></thead>
-                <tbody id="table_${job['Job ID']}"></tbody>
-              </table>
-            </td>`;
-            tr.after(dtr);
-            const jobDetail = await fetchJob(job['Job ID']);
-            if(jobDetail.result){
-              const keys = Object.keys(jobDetail.result);
-              const vals = Object.values(jobDetail.result);
-              Plotly.newPlot(`hist_${job['Job ID']}`, [{x:keys,y:vals,type:'bar'}], {title:'Measurement Results'});
-              const tableEl = document.getElementById(`table_${job['Job ID']}`);
-              tableEl.innerHTML = "";
-              Object.entries(jobDetail.result).forEach(([k,v])=>{
-                const row = document.createElement('tr');
-                const intensity = Math.min(255, Math.round(v*10));
-                row.innerHTML = `<td class="px-2 py-1 border border-white/20">${k}</td>
-                                 <td class="px-2 py-1 border border-white/20">${v}</td>`;
-                row.children[1].style.backgroundColor = `rgb(${255-intensity},${255-intensity},255)`;
-                tableEl.appendChild(row);
-              });
-            }
-          }
-        }
-      });
-    }
+      // Event listener
+      document.getElementById(`view_${job['Job ID']}`).addEventListener('click', () => toggleDetails(job['Job ID']));
+    });
 
-    // ---------- startup ----------
-    renderBackends();
-    renderJobs();
-    setInterval(renderJobs, 10000);
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+    
+  } catch (err) {
+    console.error('Failed to render jobs:', err);
+  }
+}
 
+// ---------- Connection Status Updates ----------
+function updateConnectionStatus() {
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+}
 
+// ---------- Event listeners ----------
+document.getElementById('searchFilter').addEventListener('input', renderJobs);
+document.getElementById('clearSearchBtn').addEventListener('click', () => {
+  document.getElementById('searchFilter').value = '';
+  renderJobs();
+});
+
+document.getElementById('statusFilter').addEventListener('change', renderJobs);
+document.getElementById('backendFilter').addEventListener('change', renderJobs);
+
+// ---------- Initialize ----------
+renderJobs();
+updateAnalyticsCharts();
+
+// Real-time updates via WebSocket (no more polling!)
+setInterval(updateAnalyticsCharts, 30000); // Analytics every 30 seconds
+setInterval(updateConnectionStatus, 1000); // Clock update every second
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'975adde6d49e25c9',t:'MTc1NjI5MDM0Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'975afd9b82dc85c9',t:'MTc1NjI5MTY0NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
