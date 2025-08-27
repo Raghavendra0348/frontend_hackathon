@@ -132,373 +132,222 @@
 </div>
 
 <script>
-const apiBase = "https://quantum-hackathon-2.onrender.com";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Quantum Jobs Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col">
 
-// ---------- helpers ----------
-async function fetchJobs(){ return (await fetch(${apiBase}/jobs)).json(); }
-async function fetchBackends(){ return (await fetch(${apiBase}/backends)).json(); }
-async function fetchJob(id){ return (await fetch(${apiBase}/jobs/${id})).json(); }
+  <!-- HEADER -->
+  <header class="bg-gray-800 p-4 shadow-lg flex justify-between items-center">
+    <h1 class="text-2xl font-bold text-blue-400">Quantum Jobs Dashboard</h1>
+    <nav>
+      <button id="createJobBtn" class="bg-blue-500 px-4 py-2 rounded hover:bg-blue-600">+ New Job</button>
+    </nav>
+  </header>
 
-function formatTimeAgo(dateStr){
-  if(!dateStr) return '--';
-  const date = new Date(dateStr);
-  const diff = Date.now() - date;
-  const mins = Math.floor(diff/60000);
-  const hrs = Math.floor(mins/60);
-  const days = Math.floor(hrs/24);
-  if(days>0) return ${days}d ago;
-  if(hrs>0) return ${hrs}h ago;
-  if(mins>0) return ${mins}m ago;
-  return 'Just now';
-}
+  <!-- MAIN -->
+  <main class="flex-1 p-6">
+    <section class="mb-6">
+      <h2 class="text-xl font-semibold mb-4">Available Backends</h2>
+      <div id="backendList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
 
-function formatDuration(duration){
-  if(duration === null || duration === undefined) return '--';
-  // duration may be numeric seconds or a string like "5s"
-  const secs = typeof duration === 'number' ? duration : parseFloat(duration) || 0;
-  if(secs < 1) return ${Math.round(secs*1000)}ms;
-  const m = Math.floor(secs/60);
-  const s = (secs % 60).toFixed(2);
-  return m > 0 ? ${m}m ${s}s : ${s}s;
-}
-function updateStats(jobs){
-  document.getElementById('totalJobs').textContent = jobs.length;
-  document.getElementById('runningJobs').textContent = jobs.filter(j=>j.Status==='Running').length;
-  document.getElementById('queuedJobs').textContent = jobs.filter(j=>j.Status==='Queued').length;
-  document.getElementById('completedJobs').textContent = jobs.filter(j=>j.Status==='Completed').length;
-}
+    <section>
+      <h2 class="text-xl font-semibold mb-4">Job Queue</h2>
+      <div id="jobsTable" class="overflow-x-auto">
+        <table class="min-w-full border border-gray-700 text-sm">
+          <thead class="bg-gray-700">
+            <tr>
+              <th class="px-3 py-2 border border-gray-600">Job ID</th>
+              <th class="px-3 py-2 border border-gray-600">Backend</th>
+              <th class="px-3 py-2 border border-gray-600">Status</th>
+              <th class="px-3 py-2 border border-gray-600">Submitted</th>
+              <th class="px-3 py-2 border border-gray-600">Duration</th>
+              <th class="px-3 py-2 border border-gray-600">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jobsBody" class="divide-y divide-gray-700"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
-// ---------- create job ----------
-document.getElementById('createJobBtn').addEventListener('click', async ()=>{
-  const backend = document.getElementById('newBackend').value;
-  const qubits = parseInt(document.getElementById('newQubits').value) || 2;
-  const shots = parseInt(document.getElementById('newShots').value) || 1024;
-  const res = await fetch(${apiBase}/jobs/new, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({backend, qubits, shots})
-  });
-  if(res.status === 201){
-    renderJobs();
-  } else {
-    const err = await res.json();
-    alert("Error creating job: " + (err.error || JSON.stringify(err)));
-  }
-});
+  <!-- FOOTER -->
+  <footer class="bg-gray-800 p-4 text-center text-gray-400 text-sm">
+    Quantum Dashboard &copy; 2025
+  </footer>
 
-document.getElementById('refreshBtn').addEventListener('click', renderJobs);
+  <script>
+    const apiBase = "https://quantum-hackathon-2.onrender.com";
 
-// ---------- run job (synchronous call to backend) ----------
-async function runJob(jobId, btnEl){
-  try {
-    if(btnEl) { btnEl.disabled = true; btnEl.textContent = 'Running...'; }
-    const res = await fetch(${apiBase}/jobs/run/${jobId}, { method: "POST" });
-    const data = await res.json();
-    if(res.status !== 200){
-      alert("Run error: " + (data.error || JSON.stringify(data)));
-      if(btnEl) { btnEl.disabled = false; btnEl.textContent = 'Run'; }
-      renderJobs();
-      return;
+    // ---------- helpers ----------
+    async function fetchJobs(){ return (await fetch(`${apiBase}/jobs`)).json(); }
+    async function fetchBackends(){ return (await fetch(`${apiBase}/backends`)).json(); }
+    async function fetchJob(id){ return (await fetch(`${apiBase}/jobs/${id}`)).json(); }
+
+    function formatTimeAgo(dateStr){
+      if(!dateStr) return '--';
+      const date = new Date(dateStr);
+      const diff = Date.now() - date;
+      const mins = Math.floor(diff/60000);
+      const hrs = Math.floor(mins/60);
+      const days = Math.floor(hrs/24);
+      if(days>0) return `${days}d ago`;
+      if(hrs>0) return `${hrs}h ago`;
+      if(mins>0) return `${mins}m ago`;
+      return 'Just now';
     }
-    // If the details area is visible, render results there
-    const histogramId = hist_${jobId};
-    const tableId = table_${jobId};
-    const histogramDiv = document.getElementById(histogramId);
-    const tableEl = document.getElementById(tableId);
-    if(histogramDiv){
-      Plotly.newPlot(histogramId, [{ x: Object.keys(data.counts), y: Object.values(data.counts), type: 'bar' }],
-          { margin: { t: 20 }, yaxis: { title: "Counts" }, xaxis: { title: "Outcome" } },
-          { responsive: true });
+
+    function formatDuration(duration){
+      if(duration === null || duration === undefined) return '--';
+      const secs = typeof duration === 'number' ? duration : parseFloat(duration) || 0;
+      if(secs < 1) return `${Math.round(secs*1000)}ms`;
+      const m = Math.floor(secs/60);
+      const s = (secs % 60).toFixed(2);
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
-    if(tableEl){
-      const tbody = tableEl.querySelector('tbody');
-      tbody.innerHTML = '';
-      const counts = data.counts;
-      const maxCount = Math.max(...Object.values(counts));
-      for(const [k,v] of Object.entries(counts)){
-        const row = document.createElement('tr');
-        row.innerHTML = <td class="px-2 py-1 border border-white/20">${k}</td><td class="px-2 py-1 border border-white/20">${v}</td>;
-        const intensity = Math.floor((v/maxCount)*255);
-        row.children[1].style.backgroundColor = rgb(${255-intensity},${255-intensity},255);
-        tbody.appendChild(row);
-      }
-    }
-  } catch(err){
-    alert("Request failed: " + err);
-  } finally {
-    if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'View Details'; }
-    renderJobs();
-  }
-}
-// ---------- toggle details (shows results or triggers run) ----------
-// ---------- toggle details (shows results or triggers run) ----------
-async function toggleDetails(jobId) {
-  const detailsRow = document.getElementById(details_${jobId});
-  if (detailsRow.style.display === 'table-row') {
-    detailsRow.style.display = 'none';
-    return;
-  }
-  detailsRow.style.display = 'table-row';
 
-  const job = await fetchJob(jobId);
-
-  // Cancelled
-  if (job.Status === 'Cancelled') {
-    detailsRow.innerHTML = `
-      <td colspan="9" class="p-4 text-center text-gray-300">
-        <p>This job was <strong>cancelled</strong> and will not run.</p>
-      </td>`;
-    detailsRow.dataset.initialized = '1';
-    return;
-  }
-
-  // Completed
-  if (job.Status === 'Completed') {
-    detailsRow.innerHTML = `
-      <td colspan="9" class="p-4">
-        <div class="grid grid-cols-2 gap-4">
-          <div id="hist_${jobId}" class="w-full h-64"></div>
-          <table id="table_${jobId}" class="w-full border border-white/20 rounded-lg text-white text-sm">
-            <thead class="bg-white/5"><tr><th>Outcome</th><th>Counts</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </td>`;
-    detailsRow.dataset.initialized = '1';
-    // render only after DOM exists
-    requestAnimationFrame(() => renderJobResult(jobId, job.Result));
-    return;
-  }
-
-  // Queued or Running
-  if (!detailsRow.dataset.initialized) {
-    detailsRow.innerHTML = `
-      <td colspan="9" class="p-4 text-center text-gray-300">
-        <p id="jobMessage_${jobId}">${job.Status === 'Queued' ? 'Waiting for execution...' : 'Running...'}</p>
-        <div class="mt-2 space-x-2">
-          <button id="runbtn_${jobId}" class="px-3 py-1 bg-blue-500/30 rounded-lg hover:bg-blue-500/50">
-            ${job.Status === 'Queued' ? 'Run Job' : 'View Details'}
-          </button>
-          <button id="cancelbtn_${jobId}" class="px-3 py-1 bg-red-500/30 rounded-lg hover:bg-red-500/50">
-            Cancel Job
-          </button>
-        </div>
-      </td>`;
-    detailsRow.dataset.initialized = '1';
-
-    const runBtn = document.getElementById(runbtn_${jobId});
-    const cancelBtn = document.getElementById(cancelbtn_${jobId});
-
-    if (runBtn) {
-      runBtn.addEventListener('click', async (e) => {
-        e.target.disabled = true;
-        e.target.textContent = 'Running...';
-        await runJob(jobId, e.target);
+    // ---------- create job ----------
+    document.getElementById('createJobBtn').addEventListener('click', async ()=>{
+      const backend = prompt("Enter backend name:");
+      const qubits = parseInt(prompt("Enter qubit count:")) || 2;
+      const shots = parseInt(prompt("Enter shots:")) || 1024;
+      const res = await fetch(`${apiBase}/jobs/new`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({backend, qubits, shots})
       });
-    }
-
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', async (e) => {
-        e.target.disabled = true;
-        try {
-          const res = await fetch(${apiBase}/jobs/cancel/${jobId}, { method: 'POST' });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Cancel failed');
-          document.getElementById(jobMessage_${jobId}).textContent = 'This job was cancelled.';
-          runBtn.style.display = 'none';
-          cancelBtn.style.display = 'none';
-          await renderJobs();
-        } catch (err) {
-          alert("Cancel failed: " + err.message);
-          e.target.disabled = false;
-        }
-      });
-    }
-  }
-
-  // Live updates for running jobs
-  if (job.Status === 'Running') {
-    const histogramId = hist_${jobId};
-    const tableEl = document.getElementById(table_${jobId});
-
-    // wait for DOM to be ready
-    if (histogramId && tableEl) {
-      const interval = setInterval(async () => {
-        const updatedJob = await fetchJob(jobId);
-        if (updatedJob.Status !== 'Running') {
-          clearInterval(interval);
-          toggleDetails(jobId); // refresh view
-          return;
-        }
-        if (updatedJob.Result) {
-          requestAnimationFrame(() => renderJobResult(jobId, updatedJob.Result));
-        }
-      }, 3000);
-    }
-  }
-}
-
-function renderJobResult(jobId, data){
-  const histogramId = hist_${jobId};
-  const tableEl = document.getElementById(table_${jobId});
-
-  // Plot histogram
-  Plotly.newPlot(histogramId, [{ x: Object.keys(data.counts), y: Object.values(data.counts), type: 'bar' }],
-    { margin:{t:20}, yaxis:{title:"Counts"}, xaxis:{title:"Outcome"} }, { responsive:true });
-
-  // Fill table
-  const tbody = tableEl.querySelector('tbody');
-  tbody.innerHTML = '';
-  const maxCount = Math.max(...Object.values(data.counts));
-  for(const [k,v] of Object.entries(data.counts)){
-    const row = document.createElement('tr');
-    row.innerHTML = <td class="px-2 py-1 border border-white/20">${k}</td><td class="px-2 py-1 border border-white/20">${v}</td>;
-    const intensity = Math.floor((v/maxCount)*255);
-    row.children[1].style.backgroundColor = rgb(${255-intensity},${255-intensity},255);
-    tbody.appendChild(row);
-  }
-}
-
-// ---------- render jobs list ----------
-async function renderJobs(){
-  const tbody = document.getElementById('jobsTableBody');
-  tbody.innerHTML = '';
-  const jobs = await fetchJobs();
-
-  // populate backend filter and new-job backend selector
-  const backends = await fetchBackends();
-  const backendFilter = document.getElementById('backendFilter');
-  const backendSelect = document.getElementById('newBackend');
-  backendFilter.innerHTML = <option value="all">All Backends</option>${backends.map(b=><option value="${b}">${b}</option>).join('')};
-  backendSelect.innerHTML = backends.map(b=><option value="${b}">${b}</option>).join('');
-
-  updateStats(jobs);
-
-  // filter values
-  const statusFilterVal = document.getElementById('statusFilter').value;
-  const backendFilterVal = document.getElementById('backendFilter').value;
-  const searchFilterVal = document.getElementById('searchFilter').value.trim().toLowerCase();
-
-  // Filter jobs
-  let filteredJobs = jobs.filter(job => {
-    // Status filter
-    if (statusFilterVal !== 'all' && job.Status.toLowerCase() !== statusFilterVal) return false;
-    
-    // Backend filter
-    if (backendFilterVal !== 'all' && job.Backend !== backendFilterVal) return false;
-    
-    // Search filter (Job ID) - convert to string for searching since backend returns integers
-    if (searchFilterVal && !String(job['Job ID']).toLowerCase().includes(searchFilterVal)) return false;
-    
-    return true;
-  });
-
-  // Update search results info
-  const searchResults = document.getElementById('searchResults');
-  if (searchFilterVal) {
-    searchResults.style.display = 'block';
-    searchResults.textContent = Found ${filteredJobs.length} job(s) matching "${searchFilterVal}";
-  } else {
-    searchResults.style.display = 'none';
-  }
-
-  // render each job
-  filteredJobs.forEach(job=>{
-    const row = document.createElement('tr');
-    row.id = row_${job['Job ID']};
-    row.className = 'hover:bg-white/5 transition-colors duration-200';
-    
-    // Highlight matching Job ID if searching - convert to string first
-    const jobIdStr = String(job['Job ID']);
-    const jobIdDisplay = searchFilterVal && jobIdStr.toLowerCase().includes(searchFilterVal) 
-      ? jobIdStr.replace(new RegExp((${searchFilterVal}), 'gi'), '<span class="bg-green-400/30 px-1 rounded">$1</span>')
-      : jobIdStr;
-    
-    row.innerHTML = `
-      <td class="px-6 py-4 font-mono text-sm text-cyan-400">${jobIdDisplay}</td>
-      <td class="px-6 py-4"><span class="status-badge px-3 py-1 rounded-full text-xs font-medium border ${job.Status==='Running'?'border-green-400 text-green-400 bg-green-500/20':job.Status==='Queued'?'border-yellow-400 text-yellow-400 bg-yellow-500/20':job.Status==='Completed'?'border-purple-400 text-purple-400 bg-purple-500/20':'border-red-400 text-red-400 bg-red-500/20'}">${job.Status}</span></td>
-      <td class="px-6 py-4 text-sm text-gray-300">${job.Backend}</td>
-      <td class="px-6 py-4 text-sm text-gray-300">${job.Qubits}</td>
-      <td class="px-6 py-4 text-sm text-gray-300">${job.Shots.toLocaleString()}</td>
-      <td class="queue px-6 py-4 text-sm text-gray-300">${job['Queue Position'] ?? '--'}</td>
-      <td class="px-6 py-4 text-sm text-gray-300">${formatTimeAgo(job.Created)}</td>
-      <td class="duration px-6 py-4 text-sm text-gray-300">${formatDuration(job.Duration)}</td>
-      <td class="px-6 py-4"><button id="view_${job['Job ID']}" class="px-2 py-1 text-sm bg-blue-500/30 rounded-lg hover:bg-blue-500/50">View Details</button></td>`;
-    tbody.appendChild(row);
-
-    // details row
-    const detailsRow = document.createElement('tr');
-    detailsRow.id = details_${job['Job ID']};
-    detailsRow.className = 'details-row';
-    detailsRow.style.display = 'none';
-    tbody.appendChild(detailsRow);
-
-    // attach toggle handler
-    document.getElementById(view_${job['Job ID']}).addEventListener('click', ()=> toggleDetails(job['Job ID']));
-  });
-
-  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-}
-
-// ---------- live updater ----------
-async function liveUpdate(){
-  try {
-    const jobs = await fetchJobs();
-
-    // update stats
-    updateStats(jobs);
-
-    jobs.forEach(job=>{
-      // only update existing rows
-      const row = document.getElementById(row_${job['Job ID']});
-      if(!row) return; // skip if not rendered yet
-
-      // status badge
-      const statusEl = row.querySelector('.status-badge');
-      if(statusEl && statusEl.textContent !== job.Status){
-        statusEl.textContent = job.Status;
-        statusEl.className =
-          `status-badge px-3 py-1 rounded-full text-xs font-medium border ${
-            job.Status==='Running'
-              ?'border-green-400 text-green-400 bg-green-500/20'
-              :job.Status==='Queued'
-              ?'border-yellow-400 text-yellow-400 bg-yellow-500/20'
-              :job.Status==='Completed'
-              ?'border-purple-400 text-purple-400 bg-purple-500/20'
-              :'border-red-400 text-red-400 bg-red-500/20'
-          }`;
+      if(res.status === 201){
+        renderJobs();
+      } else {
+        const err = await res.json();
+        alert("Error creating job: " + (err.error || JSON.stringify(err)));
       }
-
-      // queue position
-      const queueEl = row.querySelector('.queue');
-      if(queueEl) queueEl.textContent = job['Queue Position'] ?? '--';
-
-      // duration
-      const durationEl = row.querySelector('.duration');
-      if(durationEl) durationEl.textContent = formatDuration(job.Duration);
     });
 
-    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-  } catch(err){
-    console.error("Live update failed:", err);
-  }
-}
+    // ---------- run job ----------
+    async function runJob(jobId, btnEl){
+      try {
+        if(btnEl) { btnEl.disabled = true; btnEl.textContent = 'Running...'; }
+        const res = await fetch(`${apiBase}/jobs/run/${jobId}`, { method: "POST" });
+        const data = await res.json();
+        if(res.status !== 200){
+          alert("Run error: " + (data.error || JSON.stringify(data)));
+          if(btnEl) { btnEl.disabled = false; btnEl.textContent = 'Run'; }
+          renderJobs();
+          return;
+        }
+        const histogramId = `hist_${jobId}`;
+        const tableId = `table_${jobId}`;
+        const histogramDiv = document.getElementById(histogramId);
+        const tableEl = document.getElementById(tableId);
+        if(histogramDiv && data.result){
+          const keys = Object.keys(data.result);
+          const vals = Object.values(data.result);
+          Plotly.newPlot(histogramDiv, [{x:keys,y:vals,type:'bar'}], {title:'Measurement Results'});
+        }
+        if(tableEl && data.result){
+          tableEl.innerHTML = "";
+          Object.entries(data.result).forEach(([k,v])=>{
+            const row = document.createElement('tr');
+            const intensity = Math.min(255, Math.round(v*10));
+            row.innerHTML = `<td class="px-2 py-1 border border-white/20">${k}</td>
+                             <td class="px-2 py-1 border border-white/20">${v}</td>`;
+            row.children[1].style.backgroundColor = `rgb(${255-intensity},${255-intensity},255)`;
+            tableEl.appendChild(row);
+          });
+        }
+        renderJobs();
+      } catch(err){
+        console.error(err);
+        alert("Run failed: "+err);
+      }
+    }
 
-// ---------- Search functionality ----------
-document.getElementById('searchFilter').addEventListener('input', renderJobs);
-document.getElementById('clearSearchBtn').addEventListener('click', () => {
-  document.getElementById('searchFilter').value = '';
-  renderJobs();
-});
+    // ---------- render ----------
+    async function renderBackends(){
+      const backends = await fetchBackends();
+      const div = document.getElementById('backendList');
+      div.innerHTML = "";
+      backends.forEach(b=>{
+        const card = document.createElement('div');
+        card.className = "bg-gray-700 p-4 rounded shadow";
+        card.innerHTML = `<h3 class="font-semibold text-blue-300">${b.name}</h3>
+                          <p>Status: ${b.status}</p>
+                          <p>Qubits: ${b.qubits}</p>`;
+        div.appendChild(card);
+      });
+    }
 
-document.getElementById('statusFilter').addEventListener('change', renderJobs);
-document.getElementById('backendFilter').addEventListener('change', renderJobs);
+    async function renderJobs(){
+      const jobs = await fetchJobs();
+      const body = document.getElementById('jobsBody');
+      body.innerHTML = "";
+      jobs.forEach(job=>{
+        const tr = document.createElement('tr');
+        tr.id = `row_${job['Job ID']}`;
+        tr.className = "hover:bg-gray-800";
+        tr.innerHTML = `
+          <td class="px-3 py-2 border border-gray-700">${job['Job ID']}</td>
+          <td class="px-3 py-2 border border-gray-700">${job['Backend']}</td>
+          <td class="px-3 py-2 border border-gray-700">${job['Status']}</td>
+          <td class="px-3 py-2 border border-gray-700">${formatTimeAgo(job['Submission Time'])}</td>
+          <td class="px-3 py-2 border border-gray-700">${formatDuration(job['Execution Duration (s)'])}</td>
+          <td class="px-3 py-2 border border-gray-700">
+            <button id="run_${job['Job ID']}" class="bg-green-500 px-2 py-1 rounded text-sm">Run</button>
+            <button id="view_${job['Job ID']}" class="bg-gray-500 px-2 py-1 rounded text-sm">View</button>
+          </td>`;
+        body.appendChild(tr);
 
-// ---------- initial load and auto-refresh ----------
-renderJobs();
-setInterval(liveUpdate, 10000); // only update values
+        document.getElementById(`run_${job['Job ID']}`).onclick = (e)=> runJob(job['Job ID'], e.target);
+        document.getElementById(`view_${job['Job ID']}`).onclick = async ()=>{
+          const detailsRow = document.getElementById(`details_${job['Job ID']}`);
+          if(detailsRow){
+            detailsRow.remove();
+          } else {
+            const dtr = document.createElement('tr');
+            dtr.id = `details_${job['Job ID']}`;
+            dtr.innerHTML = `<td colspan="6" class="bg-gray-800 p-4">
+              <div id="hist_${job['Job ID']}" class="h-64"></div>
+              <table class="mt-2 text-sm border border-white/20">
+                <thead><tr><th>Bitstring</th><th>Counts</th></tr></thead>
+                <tbody id="table_${job['Job ID']}"></tbody>
+              </table>
+            </td>`;
+            tr.after(dtr);
+            const jobDetail = await fetchJob(job['Job ID']);
+            if(jobDetail.result){
+              const keys = Object.keys(jobDetail.result);
+              const vals = Object.values(jobDetail.result);
+              Plotly.newPlot(`hist_${job['Job ID']}`, [{x:keys,y:vals,type:'bar'}], {title:'Measurement Results'});
+              const tableEl = document.getElementById(`table_${job['Job ID']}`);
+              tableEl.innerHTML = "";
+              Object.entries(jobDetail.result).forEach(([k,v])=>{
+                const row = document.createElement('tr');
+                const intensity = Math.min(255, Math.round(v*10));
+                row.innerHTML = `<td class="px-2 py-1 border border-white/20">${k}</td>
+                                 <td class="px-2 py-1 border border-white/20">${v}</td>`;
+                row.children[1].style.backgroundColor = `rgb(${255-intensity},${255-intensity},255)`;
+                tableEl.appendChild(row);
+              });
+            }
+          }
+        }
+      });
+    }
 
-setInterval(()=>{ document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString(); }, 1000);
+    // ---------- startup ----------
+    renderBackends();
+    renderJobs();
+    setInterval(renderJobs, 10000);
+
+
 </script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'975adde6d49e25c9',t:'MTc1NjI5MDM0Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
